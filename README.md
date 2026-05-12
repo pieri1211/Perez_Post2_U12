@@ -1,12 +1,12 @@
-![img.png](img.png) Prueba Sonarqube
+![img_1.png](img_1.png) prueba github
 
-# Sistema de Gestión de Pedidos — Integración de Patrones y Arquitecturas
+# Validación Arquitectónica con ArchUnit y ADR — Unidad 12 Post-Contenido 2
 
 ## 1. Descripción del proyecto
 
-Este repositorio corresponde al laboratorio de la Unidad 12: Integración de Patrones y Arquitecturas, Post-Contenido 1. El objetivo principal fue implementar un sistema de gestión de pedidos en Spring Boot integrando cuatro patrones de diseño: Factory, Strategy, Observer y Facade.
+Este repositorio corresponde al laboratorio de la Unidad 12: Integración de Patrones y Arquitecturas, Post-Contenido 2. El objetivo principal fue extender el sistema de gestión de pedidos desarrollado en el Post-Contenido 1 mediante reglas de validación arquitectónica con ArchUnit, documentación de decisiones de diseño en formato ADR y automatización de la validación mediante GitHub Actions.
 
-El proyecto parte de un servicio monolítico con lógica mezclada, donde el cálculo del costo, la persistencia y la notificación estaban concentrados en una sola clase. A partir de ese diseño inicial, se aplicó una refactorización arquitectónica para distribuir responsabilidades, reducir acoplamiento, mejorar la mantenibilidad y verificar la calidad del diseño mediante SonarQube y pruebas automatizadas.
+El laboratorio convierte las decisiones arquitectónicas del sistema en restricciones verificables dentro del código. De esta manera, la arquitectura no queda únicamente descrita en documentación, sino que también se valida automáticamente mediante pruebas ejecutables y un pipeline de integración continua.
 
 ---
 
@@ -15,498 +15,410 @@ El proyecto parte de un servicio monolítico con lógica mezclada, donde el cál
 - Java 17
 - Spring Boot 3.x
 - Maven
-- Spring Web
-- Spring Data JPA
-- H2 Database
-- Spring Events
-- SonarQube
-- Docker
-- ArchUnit
 - JUnit 5
-- Git y GitHub
+- ArchUnit 1.2.1
+- GitHub Actions
+- Git
+- GitHub
+- ADR Architecture Decision Records
 
 ---
 
 ## 3. Objetivo del laboratorio
 
-El propósito del laboratorio fue construir un sistema de pedidos aplicando patrones de diseño de forma integrada y no aislada. Cada patrón fue utilizado para resolver un problema concreto dentro de la arquitectura del sistema.
+El propósito del laboratorio fue implementar mecanismos de control arquitectónico sobre el sistema de pedidos, garantizando que las capas mantengan las dependencias permitidas y que las decisiones de diseño queden documentadas formalmente.
 
-Los patrones implementados fueron:
+Para cumplir este objetivo se realizaron las siguientes actividades:
 
-- **Strategy**, para desacoplar el algoritmo de procesamiento según el tipo de pedido.
-- **Factory**, para seleccionar dinámicamente la estrategia correspondiente.
-- **Observer**, para desacoplar la notificación del flujo principal mediante eventos de dominio.
-- **Facade**, para simplificar la interfaz expuesta al controlador REST.
-
-Además, se verificó que el diseño resultante redujera la complejidad del servicio principal y eliminara dependencias directas innecesarias hacia infraestructura como `JavaMailSender` o repositorios JPA desde la capa de aplicación.
+- Configuración de ArchUnit como dependencia de pruebas.
+- Implementación de cinco reglas arquitectónicas.
+- Ejecución local de las reglas mediante Maven.
+- Configuración de un workflow de GitHub Actions.
+- Documentación de tres decisiones arquitectónicas en formato ADR.
+- Verificación de un pipeline exitoso y un pipeline fallido por violación intencional.
+- Reversión de la violación para restablecer el estado correcto del proyecto.
 
 ---
 
-## 4. Problema inicial
+## 4. Configuración de ArchUnit
 
-El sistema inició con una clase de servicio monolítica denominada `ServicioPedidosLegacy`. Esta clase concentraba en un solo método varias responsabilidades: selección del tipo de pedido, cálculo del costo, cambio de estado, persistencia y envío de notificación.
+Se agregó ArchUnit como dependencia de pruebas en el archivo `pom.xml`.
 
-```java
-@Service
-public class ServicioPedidosLegacy {
+```xml
+<dependency>
+    <groupId>com.tngtech.archunit</groupId>
+    <artifactId>archunit-junit5</artifactId>
+    <version>1.2.1</version>
+    <scope>test</scope>
+</dependency>
 
-    @Autowired 
-    private PedidoRepository repo;
+Esta dependencia permite escribir reglas arquitectónicas como pruebas automatizadas. En lugar de validar manualmente la estructura del proyecto, ArchUnit inspecciona las clases compiladas y verifica si cumplen las restricciones definidas.
 
-    @Autowired 
-    private JavaMailSender mail;
+5. Validación arquitectónica
 
-    public void procesarPedido(Pedido pedido) {
-        if (pedido.getTipo() == TipoPedido.ESTANDAR) {
-            pedido.setCosto(pedido.getSubtotal() * 1.1);
-        } else if (pedido.getTipo() == TipoPedido.EXPRESS) {
-            pedido.setCosto(pedido.getSubtotal() * 1.3);
-        } else if (pedido.getTipo() == TipoPedido.INTERNACIONAL) {
-            pedido.setCosto(pedido.getSubtotal() * 1.5 + 25.0);
-        }
+Se creó la clase ReglasArquitectura dentro del paquete de pruebas del proyecto. Esta clase contiene cinco reglas orientadas a proteger la arquitectura definida en el sistema de pedidos.
 
-        pedido.setEstado(EstadoPedido.PROCESADO);
-        repo.save(pedido);
+Ruta del archivo:
 
-        mail.send(crearMensaje(pedido));
-    }
-}
+src/test/java/com/empresa/pedidos/ReglasArquitectura.java
+6. Reglas ArchUnit implementadas
+6.1 Regla 1: El dominio no debe depender de infraestructura ni adaptadores
 
-Este diseño presentaba problemas de mantenibilidad porque cualquier nuevo tipo de pedido obligaba a modificar el servicio principal. Además, el servicio estaba acoplado directamente a detalles de infraestructura, como el repositorio JPA y el mecanismo de correo electrónico.
+Esta regla garantiza que las clases ubicadas en el paquete dominio no dependan de paquetes externos relacionados con infraestructura, adaptadores REST, persistencia, correo electrónico o frameworks específicos.
 
-5. Arquitectura implementada
+@ArchTest
+static final ArchRule dominioAislado = noClasses()
+        .that()
+        .resideInAPackage("..dominio..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(
+                "..infraestructura..",
+                "..adaptadores..",
+                "javax.persistence..",
+                "org.springframework.mail.."
+        );
 
-La solución final se organizó bajo una estructura de paquetes orientada por funcionalidad y separación de responsabilidades.
+La finalidad de esta restricción es proteger el núcleo del sistema. El dominio debe representar las reglas esenciales del negocio y no debe conocer detalles técnicos como JPA, controladores REST, correo electrónico o infraestructura concreta.
 
-src/main/java/com/empresa/pedidos/
-│
-├── PedidosApplication.java
-│
-├── dominio/
-│   ├── Pedido.java
-│   ├── PedidoId.java
-│   ├── TipoPedido.java
-│   ├── EstadoPedido.java
-│   ├── PedidoProcesadoEvent.java
-│   │
-│   └── puertos/
-│       ├── RepositorioPedidos.java
-│       ├── ProcesadorPedido.java
-│       └── ServicioNotificacion.java
-│
-├── aplicacion/
-│   └── ServicioPedidos.java
-│
-├── infraestructura/
-│   ├── persistencia/
-│   │   └── RepositorioPedidosJpa.java
-│   │
-│   └── notificaciones/
-│       ├── NotificacionEmail.java
-│       └── NotificacionLog.java
-│
-└── adaptadores/
-    ├── procesadores/
-    │   ├── ProcesadorPedidoEstandar.java
-    │   ├── ProcesadorPedidoExpress.java
-    │   └── ProcesadorPedidoInternacional.java
-    │
-    ├── factory/
-    │   └── ProcesadorPedidoFactory.java
-    │
-    ├── facade/
-    │   └── FachadaPedidos.java
-    │
-    └── rest/
-        └── PedidoController.java
+6.2 Regla 2: Los controladores solo deben acceder a la Facade
 
-Esta organización permite separar dominio, aplicación, infraestructura y adaptadores, reduciendo el acoplamiento entre capas.
+Esta regla establece que las clases del paquete adaptadores.rest solo deben acceder a la fachada, al dominio, a clases de Spring Web y a clases estándar de Java.
 
-6. Implementación del patrón Strategy
+@ArchTest
+static final ArchRule controladorSoloFacade = classes()
+        .that()
+        .resideInAPackage("..adaptadores.rest..")
+        .should()
+        .onlyAccessClassesThat()
+        .resideInAnyPackage(
+                "..adaptadores.facade..",
+                "..dominio..",
+                "org.springframework.web..",
+                "java.."
+        );
 
-El patrón Strategy se aplicó para separar el algoritmo de procesamiento de pedidos según el tipo de pedido. En lugar de mantener condicionales dentro del servicio principal, se definió una interfaz común llamada ProcesadorPedido.
+El objetivo es evitar que el controlador REST conozca directamente procesadores, repositorios, servicios de infraestructura o listeners. El controlador debe delegar la operación principal en la fachada, manteniendo una interfaz de entrada simple.
 
-public interface ProcesadorPedido {
+6.3 Regla 3: Los puertos de dominio deben ser interfaces
 
-    TipoPedido getTipo();
+Esta regla valida que todas las clases ubicadas en dominio.puertos sean interfaces.
 
-    void procesar(Pedido pedido);
-}
+@ArchTest
+static final ArchRule puertosComoInterfaces = classes()
+        .that()
+        .resideInAPackage("..dominio.puertos..")
+        .should()
+        .beInterfaces();
 
-Cada tipo de pedido tiene su propia implementación.
+Esta regla conserva la separación entre contrato e implementación. Los puertos expresan lo que el dominio necesita, mientras que los adaptadores o la infraestructura implementan esos contratos.
 
-6.1 Procesador de pedido estándar
-@Component
-public class ProcesadorPedidoEstandar implements ProcesadorPedido {
+6.4 Regla 4: Los procesadores deben implementar ProcesadorPedido
 
-    @Override
-    public TipoPedido getTipo() {
-        return TipoPedido.ESTANDAR;
-    }
+Esta regla garantiza que todas las clases ubicadas en adaptadores.procesadores implementen el puerto ProcesadorPedido.
 
-    @Override
-    public void procesar(Pedido pedido) {
-        pedido.setCosto(pedido.getSubtotal() * 1.1);
-        pedido.setEstado(EstadoPedido.PROCESADO);
-    }
-}
-6.2 Procesador de pedido express
-@Component
-public class ProcesadorPedidoExpress implements ProcesadorPedido {
+@ArchTest
+static final ArchRule procesadoresImplementanPuerto = classes()
+        .that()
+        .resideInAPackage("..adaptadores.procesadores..")
+        .should()
+        .implement(ProcesadorPedido.class);
 
-    @Override
-    public TipoPedido getTipo() {
-        return TipoPedido.EXPRESS;
-    }
+Con esta validación, se asegura que cada procesador de pedido respete el contrato definido para el patrón Strategy. Esto permite que la Factory pueda seleccionar procesadores de manera uniforme.
 
-    @Override
-    public void procesar(Pedido pedido) {
-        pedido.setCosto(pedido.getSubtotal() * 1.3);
-        pedido.setEstado(EstadoPedido.PROCESADO);
-    }
-}
-6.3 Procesador de pedido internacional
-@Component
-public class ProcesadorPedidoInternacional implements ProcesadorPedido {
+6.5 Regla 5: La infraestructura no debe acceder a los adaptadores REST
 
-    @Override
-    public TipoPedido getTipo() {
-        return TipoPedido.INTERNACIONAL;
-    }
+Esta regla impide que las clases de infraestructura dependan de clases ubicadas en el paquete de controladores REST.
 
-    @Override
-    public void procesar(Pedido pedido) {
-        pedido.setCosto(pedido.getSubtotal() * 1.5 + 25.0);
-        pedido.setEstado(EstadoPedido.PROCESADO);
-    }
-}
+@ArchTest
+static final ArchRule infraNoAccedeRest = noClasses()
+        .that()
+        .resideInAPackage("..infraestructura..")
+        .should()
+        .accessClassesThat()
+        .resideInAPackage("..adaptadores.rest..");
 
-Con esta estructura, el cálculo del costo deja de estar concentrado en una cadena de condicionales y queda distribuido en clases especializadas.
+La infraestructura puede implementar detalles técnicos, como persistencia o notificaciones, pero no debe conocer la capa de entrada HTTP. Esta restricción evita dependencias inversas incorrectas.
 
-7. Implementación del patrón Factory
+7. Clase completa de reglas arquitectónicas
+package com.empresa.pedidos;
 
-El patrón Factory se aplicó para encapsular la selección de la estrategia adecuada. Spring inyecta automáticamente todas las implementaciones de ProcesadorPedido, y la fábrica las organiza en un mapa por tipo de pedido.
+import com.empresa.pedidos.dominio.puertos.ProcesadorPedido;
+import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchRule;
 
-@Component
-public class ProcesadorPedidoFactory {
-
-    private final Map<TipoPedido, ProcesadorPedido> procesadores;
-
-    public ProcesadorPedidoFactory(List<ProcesadorPedido> lista) {
-        this.procesadores = lista.stream()
-                .collect(Collectors.toMap(
-                        ProcesadorPedido::getTipo,
-                        Function.identity()
-                ));
-    }
-
-    public ProcesadorPedido obtener(TipoPedido tipo) {
-        return Optional.ofNullable(procesadores.get(tipo))
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Tipo de pedido no soportado: " + tipo
-                ));
-    }
-}
-
-La Factory evita que la clase de aplicación tenga que conocer directamente las implementaciones concretas. Esto permite agregar nuevos tipos de pedido sin alterar la lógica central del flujo.
-
-8. Implementación del patrón Observer
-
-El patrón Observer se aplicó mediante Spring Events. Después de procesar y guardar un pedido, el sistema publica un evento de dominio llamado PedidoProcesadoEvent.
-
-public record PedidoProcesadoEvent(Pedido pedido) {
-}
-
-Se definió un puerto de notificación para desacoplar el contrato de la implementación.
-
-public interface ServicioNotificacion {
-
-    void notificar(PedidoProcesadoEvent evento);
-}
-8.1 Listener de correo electrónico
-@Component
-public class NotificacionEmail implements ServicioNotificacion {
-
-    @EventListener
-    @Override
-    public void notificar(PedidoProcesadoEvent evento) {
-        System.out.println("Email enviado para pedido: "
-                + evento.pedido().getId());
-    }
-}
-8.2 Listener de log
-@Component
-public class NotificacionLog implements ServicioNotificacion {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(NotificacionLog.class);
-
-    @EventListener
-    @Override
-    public void notificar(PedidoProcesadoEvent evento) {
-        log.info("Pedido procesado: {} - Costo: {}",
-                evento.pedido().getId(),
-                evento.pedido().getCosto());
-    }
-}
-
-Con esta implementación, la notificación deja de estar acoplada al servicio principal. El flujo de pedidos solo publica un evento, y los listeners reaccionan de forma independiente.
-
-9. Implementación del patrón Facade
-
-El patrón Facade se aplicó para ofrecer una interfaz simple al controlador REST. La clase FachadaPedidos coordina la selección del procesador, la ejecución de la estrategia, la persistencia y la publicación del evento.
-
-@Service
-public class FachadaPedidos {
-
-    private final ProcesadorPedidoFactory factory;
-    private final RepositorioPedidos repositorio;
-    private final ApplicationEventPublisher publisher;
-
-    public FachadaPedidos(ProcesadorPedidoFactory factory,
-                          RepositorioPedidos repositorio,
-                          ApplicationEventPublisher publisher) {
-        this.factory = factory;
-        this.repositorio = repositorio;
-        this.publisher = publisher;
-    }
-
-    public Pedido crearPedido(Pedido pedido) {
-        factory.obtener(pedido.getTipo()).procesar(pedido);
-        Pedido guardado = repositorio.guardar(pedido);
-        publisher.publishEvent(new PedidoProcesadoEvent(guardado));
-        return guardado;
-    }
-
-    public Optional<Pedido> buscarPorId(Long id) {
-        return repositorio.buscarPorId(new PedidoId(id));
-    }
-}
-
-El controlador REST solo depende de la fachada.
-
-@RestController
-@RequestMapping("/api/pedidos")
-public class PedidoController {
-
-    private final FachadaPedidos fachada;
-
-    public PedidoController(FachadaPedidos fachada) {
-        this.fachada = fachada;
-    }
-
-    @PostMapping
-    public ResponseEntity<Pedido> crear(@RequestBody Pedido pedido) {
-        return ResponseEntity.ok(fachada.crearPedido(pedido));
-    }
-}
-
-Esta decisión reduce la complejidad del controlador y evita que la capa REST conozca detalles internos del procesamiento de pedidos.
-
-10. Verificación con ArchUnit
-
-Se utilizó ArchUnit para verificar restricciones arquitectónicas entre paquetes. El objetivo fue comprobar que la capa de aplicación no dependiera directamente de detalles de infraestructura y que el controlador REST se comunicara únicamente con la fachada.
-
-Ejemplo de regla arquitectónica:
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 @AnalyzeClasses(packages = "com.empresa.pedidos")
-public class ArquitecturaTest {
+public class ReglasArquitectura {
 
     @ArchTest
-    static final ArchRule aplicacion_no_debe_depender_de_infraestructura =
-            noClasses()
-                    .that()
-                    .resideInAPackage("..aplicacion..")
-                    .should()
-                    .dependOnClassesThat()
-                    .resideInAPackage("..infraestructura..");
+    static final ArchRule dominioAislado = noClasses()
+            .that()
+            .resideInAPackage("..dominio..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage(
+                    "..infraestructura..",
+                    "..adaptadores..",
+                    "javax.persistence..",
+                    "org.springframework.mail.."
+            );
 
     @ArchTest
-    static final ArchRule controlador_debe_usar_facade =
-            classes()
-                    .that()
-                    .resideInAPackage("..adaptadores.rest..")
-                    .should()
-                    .dependOnClassesThat()
-                    .resideInAPackage("..adaptadores.facade..");
+    static final ArchRule controladorSoloFacade = classes()
+            .that()
+            .resideInAPackage("..adaptadores.rest..")
+            .should()
+            .onlyAccessClassesThat()
+            .resideInAnyPackage(
+                    "..adaptadores.facade..",
+                    "..dominio..",
+                    "org.springframework.web..",
+                    "java.."
+            );
+
+    @ArchTest
+    static final ArchRule puertosComoInterfaces = classes()
+            .that()
+            .resideInAPackage("..dominio.puertos..")
+            .should()
+            .beInterfaces();
+
+    @ArchTest
+    static final ArchRule procesadoresImplementanPuerto = classes()
+            .that()
+            .resideInAPackage("..adaptadores.procesadores..")
+            .should()
+            .implement(ProcesadorPedido.class);
+
+    @ArchTest
+    static final ArchRule infraNoAccedeRest = noClasses()
+            .that()
+            .resideInAPackage("..infraestructura..")
+            .should()
+            .accessClassesThat()
+            .resideInAPackage("..adaptadores.rest..");
 }
+8. Ejecución local de las reglas
 
-Estas reglas permiten validar automáticamente que la arquitectura definida se mantenga durante la evolución del proyecto.
+Para ejecutar únicamente las pruebas de arquitectura se utilizó el siguiente comando:
 
-11. Pruebas implementadas
+mvn test -Dtest=ReglasArquitectura
 
-El laboratorio incluyó pruebas unitarias para validar el comportamiento de los patrones y una prueba de integración para verificar el flujo completo.
+La salida esperada fue:
 
-11.1 Prueba del patrón Strategy
-@Test
-void procesadorEstandar_debeCalcularCostoCorrectamente() {
-    Pedido pedido = new Pedido();
-    pedido.setSubtotal(100.0);
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
 
-    ProcesadorPedido procesador = new ProcesadorPedidoEstandar();
-    procesador.procesar(pedido);
+También se ejecutó la verificación completa del proyecto:
 
-    assertEquals(110.0, pedido.getCosto());
-    assertEquals(EstadoPedido.PROCESADO, pedido.getEstado());
-}
-11.2 Prueba del patrón Factory
-@Test
-void factory_debeRetornarProcesadorCorrectoPorTipo() {
-    ProcesadorPedido procesador = factory.obtener(TipoPedido.EXPRESS);
+mvn verify
 
-    assertNotNull(procesador);
-    assertEquals(TipoPedido.EXPRESS, procesador.getTipo());
-}
-11.3 Prueba del patrón Observer
-@SpringBootTest
-class PedidoProcesadoEventTest {
+Después de revertir la violación intencional, el proyecto compiló correctamente y todas las pruebas finalizaron sin errores.
 
-    @Autowired
-    private ApplicationEventPublisher publisher;
+9. Integración con GitHub Actions
 
-    @Test
-    void debePublicarEventoPedidoProcesado() {
-        Pedido pedido = new Pedido();
-        pedido.setId(1L);
+Se creó un workflow de GitHub Actions para ejecutar automáticamente las pruebas de arquitectura en cada push hacia las ramas main y develop, así como en cada pull_request hacia main.
 
-        assertDoesNotThrow(() ->
-                publisher.publishEvent(new PedidoProcesadoEvent(pedido))
-        );
-    }
-}
-11.4 Prueba del patrón Facade
-@Test
-void fachada_debeCrearPedidoUsandoFactoryRepositorioYEventos() {
-    Pedido pedido = new Pedido();
-    pedido.setTipo(TipoPedido.ESTANDAR);
-    pedido.setSubtotal(100.0);
+Ruta del archivo:
 
-    Pedido creado = fachada.crearPedido(pedido);
+.github/workflows/arquitectura.yml
 
-    assertNotNull(creado);
-    assertEquals(EstadoPedido.PROCESADO, creado.getEstado());
-}
-12. Análisis con SonarQube
+Contenido del workflow:
 
-El análisis de SonarQube fue ejecutado antes y después de la integración de patrones mediante el siguiente comando:
+name: Validacion Arquitectonica
 
-mvn clean verify sonar:sonar \
-  -Dsonar.projectKey=pedidos-integrado \
-  -Dsonar.host.url=http://localhost:9000 \
-  -Dsonar.login=TU_TOKEN
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
 
-El análisis permitió comparar la calidad del diseño inicial frente a la solución refactorizada con patrones. El objetivo fue verificar reducción de complejidad, disminución del acoplamiento y cumplimiento del Quality Gate.
+jobs:
+  arquitectura:
+    runs-on: ubuntu-latest
 
-13. Comparación de métricas
-Métrica	Antes de integrar patrones	Después de integrar patrones	Resultado
-Cyclomatic Complexity del servicio principal	4	1	Disminuyó
-Cognitive Complexity del servicio principal	6	0	Disminuyó
-Acoplamiento directo a JavaMailSender	Sí	No	Eliminado
-Acoplamiento directo a JPA Repository desde aplicación	Sí	No	Eliminado
-Cobertura de pruebas	X%	X%	Mejoró / Se mantuvo
-Code Smells	X	X	Mejoró / Se mantuvo
-Bugs	X	X	Mejoró / Se mantuvo
-Quality Gate	X	Passed	Cumple
+    steps:
+      - uses: actions/checkout@v4
 
-Reemplazar los valores marcados con X por los datos exactos de SonarQube.
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
 
-14. Justificación técnica de los patrones aplicados
-Strategy
+      - name: Cache Maven
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
 
-Strategy se utilizó para eliminar condicionales asociados al tipo de pedido. Cada variante de procesamiento quedó encapsulada en una clase independiente. Esto mejora la extensibilidad, porque un nuevo tipo de pedido puede agregarse creando una nueva implementación de ProcesadorPedido, sin modificar el flujo central.
+      - name: Compilar y ejecutar pruebas de arquitectura
+        run: mvn test -Dtest=ReglasArquitectura --no-transfer-progress
 
-Factory
+      - name: Ejecutar suite completa de pruebas
+        run: mvn verify --no-transfer-progress
 
-Factory se utilizó para centralizar la selección de la estrategia correspondiente. En lugar de usar if, else if o switch, la fábrica resuelve dinámicamente qué procesador debe utilizarse según el TipoPedido. Esto reduce el acoplamiento entre el servicio principal y las implementaciones concretas.
+Este workflow asegura que cualquier cambio subido al repositorio sea validado automáticamente contra las reglas arquitectónicas definidas.
 
-Observer
+10. Verificación de pipeline rojo y pipeline verde
 
-Observer se implementó mediante eventos de Spring para separar la notificación del procesamiento principal. La fachada publica un evento cuando el pedido es procesado, y los listeners reaccionan de forma independiente. Esto permite agregar nuevos mecanismos de notificación sin modificar la lógica del pedido.
+Para comprobar que las reglas no solo existen, sino que realmente detectan violaciones, se realizó una violación intencional de arquitectura. La prueba consistió en introducir una dependencia indebida desde una clase del dominio hacia una clase de infraestructura.
 
-Facade
+Procedimiento ejecutado:
 
-Facade se utilizó para simplificar la interacción del controlador REST con el sistema. El controlador no conoce la Factory, el repositorio ni el publicador de eventos. Solo invoca a FachadaPedidos, lo que reduce la complejidad de la capa de entrada y mejora la separación de responsabilidades.
+git add .
+git commit -m "test: violacion de arquitectura intencional"
+git push origin develop
 
-15. Flujo funcional del sistema
+El pipeline de GitHub Actions falló correctamente, reportando una violación de las reglas de ArchUnit.
 
-El flujo principal del sistema es el siguiente:
+Posteriormente, la violación fue revertida:
 
-Cliente HTTP
-   ↓
-PedidoController
-   ↓
-FachadaPedidos
-   ↓
-ProcesadorPedidoFactory
-   ↓
-ProcesadorPedido correspondiente
-   ↓
-RepositorioPedidos
-   ↓
-PedidoProcesadoEvent
-   ↓
-NotificacionEmail / NotificacionLog
+git revert HEAD
+git push origin develop
 
-Este flujo evidencia la integración de los cuatro patrones dentro de una misma arquitectura.
+Después de revertir el cambio, el pipeline volvió a ejecutarse correctamente y quedó en estado verde.
 
-16. Ejecución del proyecto
+11. Decisiones arquitectónicas documentadas
 
-Para compilar el proyecto:
+Se creó la carpeta docs/adr/ para registrar las decisiones de diseño más relevantes del sistema.
 
-mvn clean package
+docs/
+└── adr/
+    ├── ADR-001.md
+    ├── ADR-002.md
+    └── ADR-003.md
 
-Para ejecutar las pruebas:
+Cada ADR contiene las cuatro secciones requeridas:
 
-mvn test
+Estado
+Contexto
+Decisión
+Consecuencias
+12. ADR-001: Arquitectura Hexagonal para aislar el dominio
+Estado
 
-Para ejecutar el análisis de SonarQube:
+Aceptado.
 
-mvn clean verify sonar:sonar \
-  -Dsonar.projectKey=pedidos-integrado \
-  -Dsonar.host.url=http://localhost:9000 \
-  -Dsonar.login=TU_TOKEN
+Contexto
 
-Para iniciar la aplicación:
+El sistema de pedidos debe soportar múltiples tipos de procesamiento y distintos canales de notificación. El acoplamiento directo del servicio a Spring Data JPA y a mecanismos concretos de notificación dificulta las pruebas unitarias, reduce la mantenibilidad y hace costoso cambiar implementaciones de infraestructura.
 
-mvn spring-boot:run
-17. Endpoint principal
+Decisión
 
-El sistema expone el siguiente endpoint para crear pedidos:
+Se adopta arquitectura hexagonal. El dominio define puertos mediante interfaces, y los adaptadores e infraestructura implementan dichos puertos. El dominio no debe importar clases de Spring, JPA, controladores REST ni servicios concretos de infraestructura.
 
-POST /api/pedidos
+Consecuencias
 
-Ejemplo de cuerpo JSON:
+Consecuencias positivas:
 
-{
-  "tipo": "ESTANDAR",
-  "subtotal": 100.0
-}
+El dominio puede probarse sin levantar el contenedor de Spring.
+Es posible reemplazar una tecnología de persistencia sin modificar reglas de negocio.
+Las dependencias se orientan hacia contratos y no hacia implementaciones concretas.
 
-Respuesta esperada:
+Consecuencias negativas:
 
-{
-  "id": 1,
-  "tipo": "ESTANDAR",
-  "subtotal": 100.0,
-  "costo": 110.0,
-  "estado": "PROCESADO"
-}
+Aumenta la cantidad de interfaces y clases.
+Requiere mayor disciplina estructural para mantener correctamente los paquetes.
+Puede resultar más complejo para integrantes nuevos del equipo.
+13. ADR-002: Factory y Strategy para seleccionar procesadores
+Estado
 
-También puede utilizarse con los tipos:
+Aceptado.
 
-ESTANDAR
-EXPRESS
-INTERNACIONAL
-18. Commits realizados
+Contexto
 
-El repositorio contiene commits descriptivos que reflejan la integración progresiva de los patrones:
+El sistema maneja varios tipos de pedido, como estándar, express e internacional. Cada tipo requiere un algoritmo distinto de procesamiento. Concentrar esa lógica en un switch o en condicionales dentro del servicio principal viola el principio Open/Closed, porque cada nuevo tipo de pedido obliga a modificar código existente.
 
-1. Implementar estructura base del sistema de pedidos
-2. Integrar Strategy y Factory para procesamiento de pedidos
-3. Integrar Observer y Facade con eventos de dominio
-4. Agregar pruebas unitarias, ArchUnit y análisis SonarQube
-19. Resultado final
+Decisión
 
-La integración de Factory, Strategy, Observer y Facade permitió transformar un servicio monolítico en una arquitectura más modular, extensible y verificable. El procesamiento de pedidos quedó desacoplado por tipo mediante Strategy, la selección de algoritmos fue centralizada con Factory, las notificaciones quedaron separadas mediante Observer y la interacción externa fue simplificada mediante Facade.
+Se utiliza el patrón Strategy mediante la interfaz ProcesadorPedido, con una implementación por cada tipo de pedido. Además, se utiliza una Factory que recibe las estrategias disponibles y selecciona la implementación correcta en tiempo de ejecución.
 
-El análisis con SonarQube evidenció una reducción de la complejidad del servicio principal y la eliminación de dependencias directas hacia infraestructura desde la lógica de aplicación. Además, las pruebas unitarias y de integración permitieron validar que cada patrón cumpliera una responsabilidad concreta dentro del sistema.
+Consecuencias
+
+Consecuencias positivas:
+
+Agregar un nuevo tipo de pedido exige crear una nueva clase, no modificar el servicio principal.
+Cada procesador puede probarse de manera independiente.
+Se reduce la complejidad condicional del flujo principal.
+
+Consecuencias negativas:
+
+Aumenta el número de clases del proyecto.
+La selección mediante mapa puede no ser evidente para desarrolladores sin experiencia previa en Spring.
+Es necesario garantizar que cada procesador esté correctamente registrado como componente.
+14. ADR-003: Spring Events como mecanismo Observer para notificaciones
+Estado
+
+Aceptado.
+
+Contexto
+
+El sistema necesita notificar cuando un pedido es procesado. Los canales de notificación pueden incluir email, log y posibles canales futuros como SMS o mensajería externa. Si la fachada o el servicio principal dependen directamente de cada canal, el flujo central se vuelve frágil y difícil de extender.
+
+Decisión
+
+Se utiliza ApplicationEventPublisher de Spring para publicar el evento PedidoProcesadoEvent. Cada canal de notificación implementa un listener independiente mediante @EventListener.
+
+Consecuencias
+
+Consecuencias positivas:
+
+Agregar un nuevo canal de notificación no requiere modificar FachadaPedidos.
+Los listeners quedan desacoplados del flujo principal.
+El evento puede ser consumido por múltiples receptores.
+
+Consecuencias negativas:
+
+El flujo de ejecución es menos visible que una llamada directa.
+El orden de ejecución de listeners no está garantizado por defecto.
+La depuración puede requerir revisar todos los listeners registrados para un evento.
+15. Estructura final del repositorio
+apellido-post2-u12/
+│
+├── .github/
+│   └── workflows/
+│       └── arquitectura.yml
+│
+├── docs/
+│   └── adr/
+│       ├── ADR-001.md
+│       ├── ADR-002.md
+│       └── ADR-003.md
+│
+├── src/
+│   ├── main/
+│   │   └── java/
+│   │       └── com/
+│   │           └── empresa/
+│   │               └── pedidos/
+│   │                   ├── dominio/
+│   │                   ├── aplicacion/
+│   │                   ├── infraestructura/
+│   │                   └── adaptadores/
+│   │
+│   └── test/
+│       └── java/
+│           └── com/
+│               └── empresa/
+│                   └── pedidos/
+│                       └── ReglasArquitectura.java
+│
+├── pom.xml
+└── README.md
+16. Commits realizados
+
+El repositorio contiene commits descriptivos que reflejan el avance del laboratorio:
+
+1. Implementar reglas arquitectónicas con ArchUnit
+2. Documentar decisiones arquitectónicas en formato ADR
+3. Configurar workflow de validación arquitectónica en GitHub Actions
+4. Probar violación intencional y revertir arquitectura
+17. Resultado final
+
+El laboratorio permitió transformar las decisiones arquitectónicas del sistema en reglas verificables mediante ArchUnit. Las cinco reglas implementadas protegen el aislamiento del dominio, restringen el acceso de los controladores a la fachada, obligan a que los puertos sean interfaces, garantizan que los procesadores implementen el contrato correspondiente y evitan dependencias indebidas desde infraestructura hacia REST.
+
+La integración con GitHub Actions permite que estas reglas se ejecuten automáticamente en cada cambio subido al repositorio. Además, los ADR documentan las decisiones más importantes del diseño, incluyendo su contexto, justificación y consecuencias. Como resultado, el proyecto queda respaldado por documentación técnica y validación automatizada, lo cual mejora la mantenibilidad y reduce el riesgo de degradación arquitectónica.
