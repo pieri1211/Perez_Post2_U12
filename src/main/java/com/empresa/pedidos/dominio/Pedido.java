@@ -3,6 +3,7 @@ package com.empresa.pedidos.dominio;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.empresa.pedidos.infraestructura.persistencia.RepositorioPedidosJpa;
 
 @Entity
 @Data
@@ -23,4 +24,6 @@ public class Pedido {
         this.subtotal = subtotal;
         this.estado = EstadoPedido.PENDIENTE;
     }
+    // Violacion intencional - usar la clase de infraestructura
+    private transient RepositorioPedidosJpa violacionIntencional;
 }
